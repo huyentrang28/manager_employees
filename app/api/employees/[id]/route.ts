@@ -100,29 +100,11 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> | { id: string } }
 ) {
-  try {
-    const session = await getServerSession(authOptions)
-    if (!session || (session.user.role !== 'HR' && session.user.role !== 'BOARD')) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const resolvedParams = await Promise.resolve(params)
-    // Xóa nhân viên (cascade sẽ xóa các bản ghi liên quan)
-    await prisma.employee.delete({
-      where: { id: resolvedParams.id },
-    })
-
-    return NextResponse.json({ message: 'Employee deleted successfully' })
-  } catch (error: any) {
-    if (error.code === 'P2025') {
-      return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
-    }
-    console.error('Error deleting employee:', error)
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    )
-  }
+  // Chức năng xóa nhân viên đã bị vô hiệu hóa
+  return NextResponse.json(
+    { error: 'Chức năng xóa nhân viên đã bị vô hiệu hóa. Vui lòng sử dụng chức năng tắt trạng thái thay thế.' },
+    { status: 403 }
+  )
 }
 
 

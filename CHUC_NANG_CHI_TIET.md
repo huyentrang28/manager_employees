@@ -793,9 +793,6 @@ npm start
 | **Đào tạo** | `/training` | Tất cả | Quản lý đào tạo |
 | **Nghỉ phép** | `/leave` | Tất cả | Quản lý nghỉ phép |
 | **Hợp đồng** | `/contracts` | BOARD, HR, MANAGER | Quản lý hợp đồng |
-| **Tài liệu** | `/documents` | Tất cả | Quản lý tài liệu |
-| **Bảo hiểm** | `/insurance` | Tất cả | Quản lý bảo hiểm |
-| **Báo cáo** | `/reports` | BOARD, HR, MANAGER | Xem báo cáo |
 
 ---
 

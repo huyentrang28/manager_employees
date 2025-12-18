@@ -114,7 +114,36 @@ export async function GET(
       }
     })
 
-    // Tạo danh sách các tháng từ ngày bắt đầu hợp đồng đến hiện tại
+    // Xác định tháng cuối cùng cần tính lương
+    // 1. Nếu nhân viên không ACTIVE: chỉ tính đến tháng trước tháng hiện tại
+    // 2. Nếu hợp đồng có endDate: chỉ tính đến tháng của endDate
+    // 3. Lấy min của các điều kiện trên
+    let endYear = nowYear
+    let endMonth = nowMonth - 1 // Mặc định: tháng trước tháng hiện tại
+    
+    // Nếu nhân viên không ACTIVE, chỉ tính đến tháng trước
+    if (employee.status !== 'ACTIVE') {
+      endMonth = nowMonth - 1
+      if (endMonth < 1) {
+        endMonth = 12
+        endYear = nowYear - 1
+      }
+    }
+    
+    // Nếu hợp đồng có endDate, chỉ tính đến tháng của endDate
+    if (contract.endDate && !contract.isIndefinite) {
+      const contractEndDate = new Date(contract.endDate)
+      const contractEndYear = contractEndDate.getFullYear()
+      const contractEndMonth = contractEndDate.getMonth() + 1
+      
+      // Lấy min (tháng cuối cùng hợp đồng, tháng cuối cùng nhân viên còn ACTIVE)
+      if (contractEndYear < endYear || (contractEndYear === endYear && contractEndMonth < endMonth)) {
+        endYear = contractEndYear
+        endMonth = contractEndMonth
+      }
+    }
+
+    // Tạo danh sách các tháng từ ngày bắt đầu hợp đồng đến endMonth
     const salaryHistory = []
     
     // Bắt đầu từ tháng đầu tiên của hợp đồng
@@ -122,12 +151,8 @@ export async function GET(
     const startMonth = contractStartDate.getMonth() + 1
     let currentYear = startYear
     let currentMonth = startMonth
-    
-    // Kết thúc ở tháng hiện tại
-    const endYear = nowYear
-    const endMonth = nowMonth
 
-    // Tính toán các tháng từ tháng bắt đầu hợp đồng đến tháng hiện tại
+    // Tính toán các tháng từ tháng bắt đầu hợp đồng đến endMonth
     while (
       currentYear < endYear || 
       (currentYear === endYear && currentMonth <= endMonth)
@@ -193,6 +218,40 @@ export async function GET(
     // Sắp xếp theo thời gian mới nhất trước
     salaryHistory.reverse()
 
+    // Tính tổng lương đã trả: tất cả các tháng đã hoàn thành đến endMonth
+    // (endYear và endMonth đã được xác định ở trên dựa trên status và endDate)
+    let totalPaid = 0
+    
+    // Tính số tháng đã hoàn thành (từ tháng bắt đầu hợp đồng đến endMonth)
+    let completedMonths = 0
+    if (startYear < endYear || (startYear === endYear && startMonth <= endMonth)) {
+      if (startYear === endYear) {
+        completedMonths = endMonth - startMonth + 1
+      } else {
+        completedMonths = (endYear - startYear) * 12 + (endMonth - startMonth + 1)
+      }
+    }
+    
+    if (completedMonths > 0) {
+      // Tính lương cơ bản cho các tháng đã hoàn thành
+      totalPaid = baseSalary * completedMonths
+      
+      // Cộng thêm thưởng cho các tháng đã hoàn thành
+      let currentDate = new Date(contractStartDate.getFullYear(), contractStartDate.getMonth(), 1)
+      const endDate = new Date(endYear, endMonth, 0) // Ngày cuối tháng endMonth
+      
+      while (currentDate <= endDate) {
+        const year = currentDate.getFullYear()
+        const month = currentDate.getMonth() + 1
+        const payPeriod = `${year}-${String(month).padStart(2, '0')}`
+        
+        const bonus = rewardMap.get(payPeriod) || 0
+        totalPaid += bonus
+        
+        currentDate.setMonth(currentDate.getMonth() + 1)
+      }
+    }
+
     return NextResponse.json({
       employee: {
         id: employee.id,
@@ -205,9 +264,7 @@ export async function GET(
         salary: baseSalary,
       },
       salaryHistory,
-      totalPaid: salaryHistory
-        .filter((m) => m.status === 'PAID')
-        .reduce((sum, m) => sum + m.netPay, 0),
+      totalPaid,
       totalPending: salaryHistory
         .filter((m) => m.status === 'PENDING')
         .reduce((sum, m) => sum + m.netPay, 0),

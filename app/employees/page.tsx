@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Plus, Search, Filter, Edit, Trash2, Power } from 'lucide-react'
+import { Plus, Search, Filter, Edit, Power } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import { Button } from '@/components/ui/Button'
 
@@ -68,14 +68,20 @@ export default function EmployeesPage() {
   const canCreate = userRole === 'HR' || userRole === 'BOARD'
   const canManage = userRole === 'HR' || userRole === 'BOARD'
   const [updatingStatus, setUpdatingStatus] = useState<string | null>(null)
-  const [deletingId, setDeletingId] = useState<string | null>(null)
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null)
+  // Đã bỏ chức năng xóa nhân viên
 
   const handleStatusChange = async (employeeId: string, currentStatus: string) => {
     if (!canManage) return
 
     const newStatus = currentStatus === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE'
     setUpdatingStatus(employeeId)
+    
+    // Optimistic update: cập nhật UI ngay lập tức
+    setEmployees(prevEmployees =>
+      prevEmployees.map(emp =>
+        emp.id === employeeId ? { ...emp, status: newStatus } : emp
+      )
+    )
     
     try {
       const response = await fetch(`/api/employees/${employeeId}/status`, {
@@ -86,37 +92,18 @@ export default function EmployeesPage() {
 
       if (!response.ok) {
         const data = await response.json()
+        // Rollback nếu có lỗi
+        setEmployees(prevEmployees =>
+          prevEmployees.map(emp =>
+            emp.id === employeeId ? { ...emp, status: currentStatus } : emp
+          )
+        )
         throw new Error(data.error || 'Không thể cập nhật trạng thái')
       }
-
-      await fetchEmployees()
     } catch (error: any) {
       alert(`Lỗi: ${error.message || 'Có lỗi xảy ra khi cập nhật trạng thái'}`)
     } finally {
       setUpdatingStatus(null)
-    }
-  }
-
-  const handleDelete = async (employeeId: string) => {
-    if (!canManage) return
-
-    setDeletingId(employeeId)
-    try {
-      const response = await fetch(`/api/employees/${employeeId}`, {
-        method: 'DELETE',
-      })
-
-      if (!response.ok) {
-        const data = await response.json()
-        throw new Error(data.error || 'Không thể xóa nhân viên')
-      }
-
-      await fetchEmployees()
-      setShowDeleteConfirm(null)
-    } catch (error: any) {
-      alert(`Lỗi: ${error.message || 'Có lỗi xảy ra khi xóa nhân viên'}`)
-    } finally {
-      setDeletingId(null)
     }
   }
 
@@ -274,13 +261,6 @@ export default function EmployeesPage() {
                             >
                               <Edit className="h-4 w-4" />
                             </Link>
-                            <button
-                              onClick={() => setShowDeleteConfirm(employee.id)}
-                              className="text-red-600 hover:text-red-900"
-                              title="Xóa nhân viên"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
                             <Link
                               href={`/employees/${employee.id}`}
                               className="text-blue-600 hover:text-blue-900"
@@ -302,33 +282,6 @@ export default function EmployeesPage() {
         </div>
       </div>
 
-      {/* Dialog xác nhận xóa */}
-      {showDeleteConfirm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-lg p-6 max-w-md">
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Xác nhận xóa</h3>
-            <p className="text-sm text-gray-600 mb-4">
-              Bạn có chắc chắn muốn xóa nhân viên này? Hành động này không thể hoàn tác và sẽ xóa tất cả dữ liệu liên quan.
-            </p>
-            <div className="flex gap-3">
-              <Button
-                onClick={() => handleDelete(showDeleteConfirm)}
-                disabled={deletingId === showDeleteConfirm}
-                className="bg-red-600 hover:bg-red-700"
-              >
-                {deletingId === showDeleteConfirm ? 'Đang xóa...' : 'Xóa'}
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => setShowDeleteConfirm(null)}
-                disabled={deletingId === showDeleteConfirm}
-              >
-                Hủy
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

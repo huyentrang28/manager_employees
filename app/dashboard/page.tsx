@@ -161,31 +161,21 @@ async function getDashboardStats(userId?: string, userRole?: string) {
         }
       }
     } else {
-      // BOARD: Tổng lương đã trả của tất cả nhân viên
-      // Tính từ PayrollRecord PAID trước
-      const payrollResult = await prisma.payrollRecord.aggregate({
-        _sum: { netPay: true },
-        where: { status: 'PAID' },
-      }).catch(() => ({ _sum: { netPay: 0 } }))
-      const paidFromRecords = payrollResult._sum.netPay || 0
+      // BOARD: Tổng lương đã trả của TẤT CẢ nhân viên (kể cả đã tắt trạng thái hoặc xóa)
+      // Tính theo thời gian bắt đầu hợp đồng của mỗi nhân viên + thưởng đến thời điểm hiện tại
       
-      // Tính từ hợp đồng cho các nhân viên chưa có PayrollRecord hoặc để bổ sung
+      // Lấy TẤT CẢ nhân viên (không filter theo status)
       const employees = await prisma.employee.findMany({
-        where: { status: 'ACTIVE' },
         include: {
           contracts: {
             where: { status: 'ACTIVE' },
             orderBy: { startDate: 'desc' },
             take: 1,
           },
-          payrollRecords: {
-            where: { status: 'PAID' },
-            select: { netPay: true, payPeriod: true },
-          },
         },
       })
       
-      // Lấy tất cả thưởng
+      // Lấy tất cả thưởng của tất cả nhân viên
       const employeeIds = employees.map(e => e.id)
       const rewards = await prisma.reward.findMany({
         where: {
@@ -220,19 +210,10 @@ async function getDashboardStats(userId?: string, userRole?: string) {
       const now = new Date()
       const currentYear = now.getFullYear()
       const currentMonth = now.getMonth() + 1
-      const currentPeriod = `${currentYear}-${String(currentMonth).padStart(2, '0')}`
       
-      // Tính tổng từ hợp đồng cho các nhân viên chưa có PayrollRecord đầy đủ
-      let calculatedFromContracts = 0
+      // Tính tổng lương cho tất cả nhân viên
       for (const emp of employees) {
-        const paidFromEmpRecords = emp.payrollRecords.reduce((sum, record) => sum + record.netPay, 0)
-        
-        // Nếu nhân viên đã có PayrollRecord đầy đủ, bỏ qua
-        if (paidFromEmpRecords > 0) {
-          continue
-        }
-        
-        // Tính từ hợp đồng nếu không có PayrollRecord
+        // Chỉ tính nếu nhân viên có hợp đồng
         if (emp.contracts.length > 0) {
           const contract = emp.contracts[0]
           const baseSalary = contract.salary || emp.salary || 0
@@ -242,13 +223,42 @@ async function getDashboardStats(userId?: string, userRole?: string) {
             const startYear = contractStartDate.getFullYear()
             const startMonth = contractStartDate.getMonth() + 1
             
-            // Tính số tháng đã hoàn thành (không tính tháng hiện tại)
+            // Xác định tháng cuối cùng cần tính lương
+            // 1. Nếu nhân viên không ACTIVE: chỉ tính đến tháng trước tháng hiện tại
+            // 2. Nếu hợp đồng có endDate: chỉ tính đến tháng của endDate
+            // 3. Lấy min của các điều kiện trên
+            let endYear = currentYear
+            let endMonth = currentMonth - 1 // Mặc định: tháng trước tháng hiện tại
+            
+            // Nếu nhân viên không ACTIVE, chỉ tính đến tháng trước
+            if (emp.status !== 'ACTIVE') {
+              endMonth = currentMonth - 1
+              if (endMonth < 1) {
+                endMonth = 12
+                endYear = currentYear - 1
+              }
+            }
+            
+            // Nếu hợp đồng có endDate, chỉ tính đến tháng của endDate
+            if (contract.endDate && !contract.isIndefinite) {
+              const contractEndDate = new Date(contract.endDate)
+              const contractEndYear = contractEndDate.getFullYear()
+              const contractEndMonth = contractEndDate.getMonth() + 1
+              
+              // Lấy min (tháng cuối cùng hợp đồng, tháng cuối cùng nhân viên còn ACTIVE)
+              if (contractEndYear < endYear || (contractEndYear === endYear && contractEndMonth < endMonth)) {
+                endYear = contractEndYear
+                endMonth = contractEndMonth
+              }
+            }
+            
+            // Tính số tháng đã hoàn thành (từ tháng bắt đầu hợp đồng đến endMonth)
             let completedMonths = 0
-            if (startYear < currentYear || (startYear === currentYear && startMonth < currentMonth)) {
-              if (startYear === currentYear) {
-                completedMonths = currentMonth - startMonth
+            if (startYear < endYear || (startYear === endYear && startMonth <= endMonth)) {
+              if (startYear === endYear) {
+                completedMonths = endMonth - startMonth + 1
               } else {
-                completedMonths = (currentYear - startYear) * 12 + (currentMonth - startMonth)
+                completedMonths = (endYear - startYear) * 12 + (endMonth - startMonth + 1)
               }
             }
             
@@ -260,7 +270,7 @@ async function getDashboardStats(userId?: string, userRole?: string) {
               const employeeRewards = rewardMap.get(emp.id)
               if (employeeRewards) {
                 let currentDate = new Date(contractStartDate.getFullYear(), contractStartDate.getMonth(), 1)
-                const endDate = new Date(currentYear, currentMonth - 1, 0) // Ngày cuối tháng trước
+                const endDate = new Date(endYear, endMonth, 0) // Ngày cuối tháng endMonth
                 
                 while (currentDate <= endDate) {
                   const year = currentDate.getFullYear()
@@ -274,14 +284,11 @@ async function getDashboardStats(userId?: string, userRole?: string) {
                 }
               }
               
-              calculatedFromContracts += employeeTotal
+              totalPayroll += employeeTotal
             }
           }
         }
       }
-      
-      // Tổng lương = từ PayrollRecord + từ hợp đồng (cho nhân viên chưa có PayrollRecord)
-      totalPayroll = paidFromRecords + calculatedFromContracts
     }
 
     // Tính số nhân viên - Tất cả tài khoản đều thấy giống nhau

@@ -9,10 +9,8 @@ import {
   Briefcase,
   Clock,
   DollarSign,
-  TrendingUp,
   GraduationCap,
   Calendar,
-  BarChart3,
   LogOut,
   FileText,
   Shield,
@@ -26,13 +24,11 @@ const menuItems = [
   { href: '/recruitment', label: 'Tuyển dụng', icon: Briefcase },
   { href: '/timekeeping', label: 'Chấm công', icon: Clock },
   { href: '/payroll', label: 'Lương thưởng', icon: DollarSign },
-  { href: '/performance', label: 'Đánh giá', icon: TrendingUp },
   { href: '/training', label: 'Đào tạo', icon: GraduationCap },
   { href: '/leave', label: 'Nghỉ phép', icon: Calendar },
   { href: '/contracts', label: 'Hợp đồng', icon: FileText },
   { href: '/documents', label: 'Tài liệu', icon: FolderOpen },
   { href: '/insurance', label: 'Bảo hiểm', icon: Shield },
-  { href: '/reports', label: 'Báo cáo', icon: BarChart3 },
 ]
 
 export function Sidebar() {

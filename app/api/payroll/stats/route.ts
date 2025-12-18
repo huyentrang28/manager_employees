@@ -72,19 +72,23 @@ export async function GET(request: NextRequest) {
 
     // Lấy nhân viên có hợp đồng (chỉ lấy các field cần thiết)
     // Nếu là EMPLOYEE, HR, hoặc MANAGER, chỉ lấy của chính họ
+    // KHÔNG filter theo status - tính cho TẤT CẢ nhân viên (kể cả đã tắt trạng thái)
     const employees = await prisma.employee.findMany({
       where: currentEmployeeId 
-        ? { id: currentEmployeeId, status: 'ACTIVE' }
-        : { status: 'ACTIVE' },
+        ? { id: currentEmployeeId }
+        : {},
       select: {
         id: true,
         salary: true,
+        status: true,
         contracts: {
           where: { status: 'ACTIVE' },
           orderBy: { startDate: 'desc' },
           take: 1,
           select: {
             startDate: true,
+            endDate: true,
+            isIndefinite: true,
             salary: true,
           },
         },
@@ -136,11 +140,38 @@ export async function GET(request: NextRequest) {
         }
       })
 
-      // Tính từng tháng từ ngày bắt đầu hợp đồng đến tháng hiện tại
+      // Xác định tháng cuối cùng cần tính lương
+      // 1. Nếu nhân viên không ACTIVE: chỉ tính đến tháng trước tháng hiện tại
+      // 2. Nếu hợp đồng có endDate: chỉ tính đến tháng của endDate
+      // 3. Lấy min của các điều kiện trên
+      let endYear = currentYear
+      let endMonth = currentMonth - 1 // Mặc định: tháng trước tháng hiện tại
+      
+      // Nếu nhân viên không ACTIVE, chỉ tính đến tháng trước
+      if (employee.status !== 'ACTIVE') {
+        endMonth = currentMonth - 1
+        if (endMonth < 1) {
+          endMonth = 12
+          endYear = currentYear - 1
+        }
+      }
+      
+      // Nếu hợp đồng có endDate, chỉ tính đến tháng của endDate
+      if (contract.endDate && !contract.isIndefinite) {
+        const contractEndDate = new Date(contract.endDate)
+        const contractEndYear = contractEndDate.getFullYear()
+        const contractEndMonth = contractEndDate.getMonth() + 1
+        
+        // Lấy min (tháng cuối cùng hợp đồng, tháng cuối cùng nhân viên còn ACTIVE)
+        if (contractEndYear < endYear || (contractEndYear === endYear && contractEndMonth < endMonth)) {
+          endYear = contractEndYear
+          endMonth = contractEndMonth
+        }
+      }
+
+      // Tính từng tháng từ ngày bắt đầu hợp đồng đến endMonth
       let currentYearLoop = startYear
       let currentMonthLoop = startMonth
-      const endYear = currentYear
-      const endMonth = currentMonth // Tính cả tháng hiện tại
 
       while (
         currentYearLoop < endYear ||
@@ -257,19 +288,43 @@ export async function GET(request: NextRequest) {
         }
       })
 
+      // Xác định tháng cuối cùng cần tính lương
+      let endYear = currentYear
+      let endMonth = currentMonth - 1 // Mặc định: tháng trước tháng hiện tại
+      
+      // Nếu nhân viên không ACTIVE, chỉ tính đến tháng trước
+      if (employee.status !== 'ACTIVE') {
+        endMonth = currentMonth - 1
+        if (endMonth < 1) {
+          endMonth = 12
+          endYear = currentYear - 1
+        }
+      }
+      
+      // Nếu hợp đồng có endDate, chỉ tính đến tháng của endDate
+      if (contract.endDate && !contract.isIndefinite) {
+        const contractEndDate = new Date(contract.endDate)
+        const contractEndYear = contractEndDate.getFullYear()
+        const contractEndMonth = contractEndDate.getMonth() + 1
+        
+        // Lấy min (tháng cuối cùng hợp đồng, tháng cuối cùng nhân viên còn ACTIVE)
+        if (contractEndYear < endYear || (contractEndYear === endYear && contractEndMonth < endMonth)) {
+          endYear = contractEndYear
+          endMonth = contractEndMonth
+        }
+      }
+
       // Tính các tháng của năm hiện tại (chỉ các tháng đã hoàn thành, không tính tháng hiện tại)
       let currentYearLoop = startYear
       let currentMonthLoop = startMonth
-      const endYear = currentYear
-      const endMonth = currentMonth
 
       while (
         currentYearLoop < endYear ||
-        (currentYearLoop === endYear && currentMonthLoop < endMonth) // Chỉ tính đến tháng trước tháng hiện tại
+        (currentYearLoop === endYear && currentMonthLoop <= endMonth)
       ) {
         const payPeriod = `${currentYearLoop}-${String(currentMonthLoop).padStart(2, '0')}`
         
-        // Chỉ tính các tháng của năm hiện tại
+        // Chỉ tính các tháng của năm hiện tại và đã hoàn thành
         if (payPeriod.startsWith(String(currentYear)) && payPeriod !== currentPeriod) {
           const bonuses = rewardMap.get(payPeriod) || 0
           const netPay = baseSalary + bonuses
